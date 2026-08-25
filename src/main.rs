@@ -434,7 +434,7 @@ pub fn all_regions_connected(n: usize, regions: &[Vec<usize>]) -> bool {
 pub fn construct_gadget_regions(
     n: usize,
     trees: &[(usize, usize)],
-    _difficulty: &str,
+    difficulty: &str,
     rng: &mut SimpleRng,
 ) -> (Vec<Vec<usize>>, Vec<usize>, usize) {
     let mut regions = vec![vec![-1i32; n]; n];
@@ -447,9 +447,20 @@ pub fn construct_gadget_regions(
 
     let mut elim_time = vec![vec![999i32; n]; n];
 
+    let actual_anchors = 2;
+    let min_allowed = match difficulty {
+        "Easy" => 2,
+        "Medium" => 3,
+        _ => 3, // "Hard"
+    };
+
     // 1. Group 0: 2D non-linear polyomino (L-shape, elongated L, S, Z, T, box)
     let (tr0, tc0) = trees[0];
-    let g0_size = if n <= 10 { rng.gen_range(3, 5) } else { 3 };
+    let g0_size = match difficulty {
+        "Easy" => 3,
+        "Medium" => rng.gen_range(3, 5),
+        _ => if n <= 8 { 4 } else { rng.gen_range(4, 6) }, // Hard
+    };
     let g0_cells = generate_non_collinear_polyomino(tr0, tc0, n, &regions, g0_size, rng);
     for &(r, c) in &g0_cells {
         if regions[r][c] == -1 {
@@ -474,8 +485,15 @@ pub fn construct_gadget_regions(
         }
     }
 
-    // 2. Anchor 1 grows 1 adjacent cell
+    // 2. Anchor 1 grows adjacent cells
     let (tr1, tc1) = trees[1];
+    let a1_target = match difficulty {
+        "Easy" => 2,
+        "Medium" => rng.gen_range(2, 4),
+        _ => if n <= 8 { 2 } else { 3 }, // Hard
+    };
+
+    let mut a1_cells = vec![(tr1, tc1)];
     let mut nbrs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
     rng.shuffle(&mut nbrs);
     for &(dr, dc) in &nbrs {
@@ -484,24 +502,41 @@ pub fn construct_gadget_regions(
         if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 && regions[nr as usize][nc as usize] == -1 {
             regions[nr as usize][nc as usize] = 1;
             reg_sizes[1] += 1;
-            if dr == 0 {
-                for c in 0..n {
-                    if regions[tr1][c] != 1 {
-                        elim_time[tr1][c] = elim_time[tr1][c].min(0);
-                    }
-                }
-            } else {
-                for r in 0..n {
-                    if regions[r][tc1] != 1 {
-                        elim_time[r][tc1] = elim_time[r][tc1].min(0);
-                    }
-                }
+            a1_cells.push((nr as usize, nc as usize));
+            if reg_sizes[1] >= a1_target {
+                break;
             }
-            break;
         }
     }
 
-    let actual_anchors = 2;
+    if !a1_cells.is_empty() {
+        let min_r = a1_cells.iter().map(|&(r, _)| r).min().unwrap();
+        let max_r = a1_cells.iter().map(|&(r, _)| r).max().unwrap();
+        let min_c = a1_cells.iter().map(|&(_, c)| c).min().unwrap();
+        let max_c = a1_cells.iter().map(|&(_, c)| c).max().unwrap();
+
+        if min_r == max_r {
+            for c in 0..n {
+                if regions[min_r][c] != 1 {
+                    elim_time[min_r][c] = elim_time[min_r][c].min(0);
+                }
+            }
+        } else if min_c == max_c {
+            for r in 0..n {
+                if regions[r][min_c] != 1 {
+                    elim_time[r][min_c] = elim_time[r][min_c].min(0);
+                }
+            }
+        } else if (max_r - min_r <= 1) && (max_c - min_c <= 1) {
+            for r in min_r..=max_r {
+                for c in min_c..=max_c {
+                    if regions[r][c] != 1 {
+                        elim_time[r][c] = elim_time[r][c].min(0);
+                    }
+                }
+            }
+        }
+    }
 
     // 3. Setup elimination timestamps for non-anchor trees
     for step in actual_anchors..n {
@@ -524,7 +559,7 @@ pub fn construct_gadget_regions(
         }
     }
 
-    // 4. Strict Invariant Flood Fill for non-anchor regions
+    // 4. Strict Invariant Flood Fill for non-anchor regions (produces large, connected natural areas)
     let mut queue = VecDeque::new();
     for reg_id in actual_anchors..n {
         let (tr, tc) = trees[reg_id];
@@ -554,7 +589,7 @@ pub fn construct_gadget_regions(
         }
     }
 
-    // 5. Strictly Connected Straggler Drain
+    // Strictly Connected Straggler Drain (strictly attaches to 4-adjacent neighbors only)
     loop {
         let mut unassigned = Vec::new();
         for r in 0..n {
@@ -613,7 +648,7 @@ pub fn construct_gadget_regions(
         .map(|row| row.into_iter().map(|val| val as usize).collect())
         .collect();
 
-    (final_regions, reg_sizes, 2)
+    (final_regions, reg_sizes, min_allowed)
 }
 
 pub fn generate_parks_puzzle(n: usize, difficulty: &str, timeout: Duration) -> Option<ParksLevel> {
@@ -715,19 +750,36 @@ pub fn print_board(level: &ParksLevel) {
 }
 
 fn main() {
-    for &size in &[8, 10, 12, 14, 16] {
-        let timeout = Duration::from_secs(1);
-        if let Some(lvl) = generate_parks_puzzle(size, "Medium", timeout) {
+    println!("===============================================================");
+    println!("             PARKS PUZZLE GENERATOR (HIGH COMPLEXITY)          ");
+    println!("===============================================================");
+
+    for &(size, difficulty) in &[
+        (8, "Easy"),
+        (10, "Medium"),
+        (12, "Hard"),
+        (14, "Hard"),
+        (16, "Hard"),
+    ] {
+        let timeout = Duration::from_millis(1500);
+        if let Some(lvl) = generate_parks_puzzle(size, difficulty, timeout) {
             print_board(&lvl);
+            let min_s = lvl.region_sizes.iter().min().copied().unwrap_or(0);
+            let max_s = lvl.region_sizes.iter().max().copied().unwrap_or(0);
+            let avg_s = lvl.region_sizes.iter().sum::<usize>() as f64 / size as f64;
             println!(
-                "-> Generated {}x{} in {:.4}s ({} attempts)",
+                "-> Generated {}x{} [{}] in {:.4}s ({} attempts) | Region sizes: min={}, max={}, avg={:.1}",
                 size,
                 size,
+                difficulty,
                 lvl.elapsed.as_secs_f64(),
-                lvl.attempts
+                lvl.attempts,
+                min_s,
+                max_s,
+                avg_s
             );
         } else {
-            println!("Failed {}x{}", size, size);
+            println!("Failed {}x{} [{}]", size, size, difficulty);
         }
     }
 }
