@@ -449,19 +449,25 @@ pub fn construct_gadget_regions(
 
     let actual_anchors = 2;
     let min_allowed = match difficulty {
-        "Easy" => 2,
+        "Easy" => 1, // Easy allows 1-sized singletons for immediate intuitive starts!
         "Medium" => 3,
-        _ => 3, // "Hard"
+        _ => if n <= 8 { 3 } else { 4 }, // Hard: strictly >= 4 cells per region (no 1-2-3 cell dominoes)
     };
 
-    // 1. Group 0: 2D non-linear polyomino (L-shape, elongated L, S, Z, T, box)
+    // 1. Group 0: 2D non-linear polyomino (or 1-cell singleton for Easy)
     let (tr0, tc0) = trees[0];
     let g0_size = match difficulty {
-        "Easy" => 3,
+        "Easy" => 1, // 1-cell singleton for instant deduction!
         "Medium" => rng.gen_range(3, 5),
-        _ => if n <= 8 { 4 } else { rng.gen_range(4, 6) }, // Hard
+        _ => if n <= 8 { 4 } else { rng.gen_range(4, 6) }, // Hard: 4-5 cell sprawling polyomino
     };
-    let g0_cells = generate_non_collinear_polyomino(tr0, tc0, n, &regions, g0_size, rng);
+
+    let g0_cells = if g0_size == 1 {
+        vec![(tr0, tc0)]
+    } else {
+        generate_non_collinear_polyomino(tr0, tc0, n, &regions, g0_size, rng)
+    };
+
     for &(r, c) in &g0_cells {
         if regions[r][c] == -1 {
             regions[r][c] = 0;
@@ -474,7 +480,29 @@ pub fn construct_gadget_regions(
         let max_r = g0_cells.iter().map(|&(r, _)| r).max().unwrap();
         let min_c = g0_cells.iter().map(|&(_, c)| c).min().unwrap();
         let max_c = g0_cells.iter().map(|&(_, c)| c).max().unwrap();
-        if (max_r - min_r <= 1) && (max_c - min_c <= 1) {
+
+        if g0_size == 1 {
+            // Instant full-row/col/neighbor elimination for 1-sized singleton!
+            for c in 0..n {
+                if regions[min_r][c] != 0 {
+                    elim_time[min_r][c] = elim_time[min_r][c].min(0);
+                }
+            }
+            for r in 0..n {
+                if regions[r][min_c] != 0 {
+                    elim_time[r][min_c] = elim_time[r][min_c].min(0);
+                }
+            }
+            for dr in -1i32..=1 {
+                for dc in -1i32..=1 {
+                    let nr = min_r as i32 + dr;
+                    let nc = min_c as i32 + dc;
+                    if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 && regions[nr as usize][nc as usize] != 0 {
+                        elim_time[nr as usize][nc as usize] = elim_time[nr as usize][nc as usize].min(0);
+                    }
+                }
+            }
+        } else if (max_r - min_r <= 1) && (max_c - min_c <= 1) {
             for r in min_r..=max_r {
                 for c in min_c..=max_c {
                     if regions[r][c] != 0 {
@@ -488,23 +516,25 @@ pub fn construct_gadget_regions(
     // 2. Anchor 1 grows adjacent cells
     let (tr1, tc1) = trees[1];
     let a1_target = match difficulty {
-        "Easy" => 2,
+        "Easy" => 1, // Easy Anchor 1 is 1-cell singleton
         "Medium" => rng.gen_range(2, 4),
-        _ => if n <= 8 { 2 } else { 3 }, // Hard
+        _ => if n <= 10 { 5 } else { 3 }, // Hard: 2-3 cells
     };
 
     let mut a1_cells = vec![(tr1, tc1)];
-    let mut nbrs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
-    rng.shuffle(&mut nbrs);
-    for &(dr, dc) in &nbrs {
-        let nr = tr1 as i32 + dr;
-        let nc = tc1 as i32 + dc;
-        if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 && regions[nr as usize][nc as usize] == -1 {
-            regions[nr as usize][nc as usize] = 1;
-            reg_sizes[1] += 1;
-            a1_cells.push((nr as usize, nc as usize));
-            if reg_sizes[1] >= a1_target {
-                break;
+    if a1_target > 1 {
+        let mut nbrs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
+        rng.shuffle(&mut nbrs);
+        for &(dr, dc) in &nbrs {
+            let nr = tr1 as i32 + dr;
+            let nc = tc1 as i32 + dc;
+            if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 && regions[nr as usize][nc as usize] == -1 {
+                regions[nr as usize][nc as usize] = 1;
+                reg_sizes[1] += 1;
+                a1_cells.push((nr as usize, nc as usize));
+                if reg_sizes[1] >= a1_target {
+                    break;
+                }
             }
         }
     }
@@ -515,7 +545,18 @@ pub fn construct_gadget_regions(
         let min_c = a1_cells.iter().map(|&(_, c)| c).min().unwrap();
         let max_c = a1_cells.iter().map(|&(_, c)| c).max().unwrap();
 
-        if min_r == max_r {
+        if a1_cells.len() == 1 {
+            for c in 0..n {
+                if regions[min_r][c] != 1 {
+                    elim_time[min_r][c] = elim_time[min_r][c].min(0);
+                }
+            }
+            for r in 0..n {
+                if regions[r][min_c] != 1 {
+                    elim_time[r][min_c] = elim_time[r][min_c].min(0);
+                }
+            }
+        } else if min_r == max_r {
             for c in 0..n {
                 if regions[min_r][c] != 1 {
                     elim_time[min_r][c] = elim_time[min_r][c].min(0);
