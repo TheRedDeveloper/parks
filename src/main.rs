@@ -68,9 +68,9 @@ const PALETTE: [(u8, u8, u8); 16] = [
 ];
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub struct BitSet256(pub [u64; 4]);
+pub struct BitSet1024(pub [u64; 16]);
 
-impl BitSet256 {
+impl BitSet1024 {
     #[inline(always)]
     pub fn set_bit(&mut self, idx: usize) {
         self.0[idx / 64] |= 1u64 << (idx % 64);
@@ -83,12 +83,11 @@ impl BitSet256 {
 
     #[inline(always)]
     pub fn union_with(&self, other: &Self) -> Self {
-        Self([
-            self.0[0] | other.0[0],
-            self.0[1] | other.0[1],
-            self.0[2] | other.0[2],
-            self.0[3] | other.0[3],
-        ])
+        let mut res = [0u64; 16];
+        for i in 0..16 {
+            res[i] = self.0[i] | other.0[i];
+        }
+        Self(res)
     }
 }
 
@@ -102,12 +101,12 @@ pub struct ParksLevel {
     pub elapsed: Duration,
 }
 
-pub fn build_neighbor_masks(n: usize) -> Vec<BitSet256> {
-    let mut masks = vec![BitSet256::default(); n * n];
+pub fn build_neighbor_masks(n: usize) -> Vec<BitSet1024> {
+    let mut masks = vec![BitSet1024::default(); n * n];
     for r in 0..n {
         for c in 0..n {
             let idx = r * n + c;
-            let mut mask = BitSet256::default();
+            let mut mask = BitSet1024::default();
             for dr in -1i32..=1 {
                 for dc in -1i32..=1 {
                     let nr = r as i32 + dr;
@@ -179,7 +178,7 @@ struct CellInfo {
     reg: usize,
 }
 
-pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], limit: usize) -> Vec<Vec<(usize, usize)>> {
+pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet1024], limit: usize) -> Vec<Vec<(usize, usize)>> {
     let mut solutions = Vec::new();
     let mut row_cells: Vec<Vec<CellInfo>> = vec![Vec::with_capacity(n); n];
     let mut reg_cells: Vec<Vec<CellInfo>> = vec![Vec::with_capacity(n); n];
@@ -197,14 +196,14 @@ pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], lim
     fn search(
         n: usize,
         limit: usize,
-        rows_left: u32,
-        cols_used: u32,
-        regs_left: u32,
-        blocked_mask: BitSet256,
+        rows_left: u64,
+        cols_used: u64,
+        regs_left: u64,
+        blocked_mask: BitSet1024,
         placed_trees: &mut Vec<(usize, usize)>,
         row_cells: &[Vec<CellInfo>],
         reg_cells: &[Vec<CellInfo>],
-        nbr_masks: &[BitSet256],
+        nbr_masks: &[BitSet1024],
         solutions: &mut Vec<Vec<(usize, usize)>>,
     ) {
         if solutions.len() >= limit {
@@ -215,20 +214,20 @@ pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], lim
             return;
         }
 
-        let mut best_cells = [CellInfo { idx: 0, r: 0, c: 0, reg: 0 }; 256];
+        let mut best_cells = [CellInfo { idx: 0, r: 0, c: 0, reg: 0 }; 1024];
         let mut best_len = 0;
-        let mut min_cands = 999usize;
+        let mut min_cands = 9999usize;
 
         // MRV on rows
         for r in 0..n {
-            if (rows_left & (1 << r)) == 0 {
+            if (rows_left & (1u64 << r)) == 0 {
                 continue;
             }
             let mut count = 0;
-            let mut temp_cells = [CellInfo { idx: 0, r: 0, c: 0, reg: 0 }; 256];
+            let mut temp_cells = [CellInfo { idx: 0, r: 0, c: 0, reg: 0 }; 1024];
             for &info in &row_cells[r] {
-                if (cols_used & (1 << info.c)) != 0
-                    || (regs_left & (1 << info.reg)) == 0
+                if (cols_used & (1u64 << info.c)) != 0
+                    || (regs_left & (1u64 << info.reg)) == 0
                     || blocked_mask.test_bit(info.idx)
                 {
                     continue;
@@ -249,14 +248,14 @@ pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], lim
         // MRV on regions
         if min_cands > 1 {
             for reg in 0..n {
-                if (regs_left & (1 << reg)) == 0 {
+                if (regs_left & (1u64 << reg)) == 0 {
                     continue;
                 }
                 let mut count = 0;
-                let mut temp_cells = [CellInfo { idx: 0, r: 0, c: 0, reg: 0 }; 256];
+                let mut temp_cells = [CellInfo { idx: 0, r: 0, c: 0, reg: 0 }; 1024];
                 for &info in &reg_cells[reg] {
-                    if (rows_left & (1 << info.r)) == 0
-                        || (cols_used & (1 << info.c)) != 0
+                    if (rows_left & (1u64 << info.r)) == 0
+                        || (cols_used & (1u64 << info.c)) != 0
                         || blocked_mask.test_bit(info.idx)
                     {
                         continue;
@@ -285,9 +284,9 @@ pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], lim
             search(
                 n,
                 limit,
-                rows_left & !(1 << info.r),
-                cols_used | (1 << info.c),
-                regs_left & !(1 << info.reg),
+                rows_left & !(1u64 << info.r),
+                cols_used | (1u64 << info.c),
+                regs_left & !(1u64 << info.reg),
                 blocked_mask.union_with(&nbr_masks[info.idx]),
                 placed_trees,
                 row_cells,
@@ -302,7 +301,7 @@ pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], lim
         }
     }
 
-    let all_bits = (1u32 << n) - 1;
+    let all_bits = if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
     let mut placed = Vec::with_capacity(n);
     search(
         n,
@@ -310,7 +309,7 @@ pub fn solve_fast(n: usize, regions: &[Vec<usize>], nbr_masks: &[BitSet256], lim
         all_bits,
         0,
         all_bits,
-        BitSet256::default(),
+        BitSet1024::default(),
         &mut placed,
         &row_cells,
         &reg_cells,
@@ -516,9 +515,9 @@ pub fn construct_gadget_regions(
     // 2. Anchor 1 grows adjacent cells
     let (tr1, tc1) = trees[1];
     let a1_target = match difficulty {
-        "Easy" => 1, // Easy Anchor 1 is 1-cell singleton
+        "Easy" => 2, // Easy Anchor 1 is 2-cell domino
         "Medium" => rng.gen_range(2, 4),
-        _ => if n <= 10 { 5 } else { 3 }, // Hard: 2-3 cells
+        _ => if n <= 10 { 3 } else { 2 }, // Hard
     };
 
     let mut a1_cells = vec![(tr1, tc1)];
@@ -706,11 +705,16 @@ pub fn generate_parks_puzzle(n: usize, difficulty: &str, timeout: Duration) -> O
         let angle: f64 = rng.gen_f64(0.0, 2.0 * PI);
         let vr = angle.cos();
         let vc = angle.sin();
-        trees.sort_by(|a, b| {
-            let val_a = a.0 as f64 * vr + a.1 as f64 * vc + rng.gen_f64(-0.1, 0.1);
-            let val_b = b.0 as f64 * vr + b.1 as f64 * vc + rng.gen_f64(-0.1, 0.1);
-            val_a.partial_cmp(&val_b).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let mut tree_keys: Vec<((usize, usize), f64)> = trees
+            .into_iter()
+            .map(|(r, c)| {
+                let jitter = rng.gen_f64(-0.1, 0.1);
+                let key = r as f64 * vr + c as f64 * vc + jitter;
+                ((r, c), key)
+            })
+            .collect();
+        tree_keys.sort_by(|a, b| a.1.total_cmp(&b.1));
+        trees = tree_keys.into_iter().map(|(pos, _)| pos).collect();
 
         let (regions, reg_sizes, min_allowed) = construct_gadget_regions(n, &trees, difficulty, &mut rng);
 
@@ -796,13 +800,11 @@ fn main() {
     println!("===============================================================");
 
     for &(size, difficulty) in &[
-        (8, "Easy"),
-        (10, "Medium"),
-        (12, "Hard"),
-        (14, "Hard"),
+        (16, "Easy"),
+        (16, "Medium"),
         (16, "Hard"),
     ] {
-        let timeout = Duration::from_millis(1500);
+        let timeout = Duration::from_secs(5);
         if let Some(lvl) = generate_parks_puzzle(size, difficulty, timeout) {
             print_board(&lvl);
             let min_s = lvl.region_sizes.iter().min().copied().unwrap_or(0);
