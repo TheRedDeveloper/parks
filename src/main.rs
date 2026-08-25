@@ -450,7 +450,7 @@ pub fn construct_gadget_regions(
     let min_allowed = match difficulty {
         "Easy" => 1, // Easy allows 1-sized singletons for immediate intuitive starts!
         "Medium" => 3,
-        _ => if n <= 8 { 3 } else { 4 }, // Hard: strictly >= 4 cells per region (no 1-2-3 cell dominoes)
+        _ => 3, // Hard: balanced non-trivial regions
     };
 
     // 1. Group 0: 2D non-linear polyomino (or 1-cell singleton for Easy)
@@ -458,7 +458,7 @@ pub fn construct_gadget_regions(
     let g0_size = match difficulty {
         "Easy" => 1, // 1-cell singleton for instant deduction!
         "Medium" => rng.gen_range(3, 5),
-        _ => if n <= 8 { 4 } else { rng.gen_range(4, 6) }, // Hard: 4-5 cell sprawling polyomino
+        _ => rng.gen_range(4, 6), // Hard: 4-5 cell sprawling polyomino centered in the board
     };
 
     let g0_cells = if g0_size == 1 {
@@ -517,7 +517,7 @@ pub fn construct_gadget_regions(
     let a1_target = match difficulty {
         "Easy" => 2, // Easy Anchor 1 is 2-cell domino
         "Medium" => rng.gen_range(2, 4),
-        _ => if n <= 10 { 3 } else { 2 }, // Hard
+        _ => rng.gen_range(3, 5), // Hard: 3-4 cells
     };
 
     let mut a1_cells = vec![(tr1, tc1)];
@@ -701,20 +701,71 @@ pub fn generate_parks_puzzle(n: usize, difficulty: &str, timeout: Duration) -> O
         attempts += 1;
         let mut trees = generate_tree_solution(n, &mut rng);
 
-        // Random sweep direction vector so Group 0 starts in random locations/corners
-        let angle: f64 = rng.gen_f64(0.0, 2.0 * PI);
+        // Probabilistic center vs edge start based on difficulty:
+        // - Easy: 100% edge/corner sweep for simple intuitive solving
+        // - Medium: 50% center, 50% edge
+        // - Hard: 80% center-preferred (surrounded by big outer sections), 20% edge
+        let use_center = match difficulty {
+            "Easy" => false,
+            "Medium" => rng.gen_f64(0.0, 1.0) < 0.50,
+            _ => rng.gen_f64(0.0, 1.0) < 0.80,
+        };
+
+        let target_pt = if use_center {
+            let mid = (n as f64 - 1.0) / 2.0;
+            let offset_max = (n as f64 * 0.15).max(1.0);
+            (
+                mid + rng.gen_f64(-offset_max, offset_max),
+                mid + rng.gen_f64(-offset_max, offset_max),
+            )
+        } else {
+            let edge = rng.gen_range(0, 4);
+            let rnd_pos = rng.gen_f64(0.0, (n - 1) as f64);
+            match edge {
+                0 => (0.0, rnd_pos),
+                1 => ((n - 1) as f64, rnd_pos),
+                2 => (rnd_pos, 0.0),
+                _ => (rnd_pos, (n - 1) as f64),
+            }
+        };
+
+        // Pick Tree 0 closest to target_pt
+        let mut best_idx = 0;
+        let mut min_dist_sq = f64::MAX;
+        for (i, &(r, c)) in trees.iter().enumerate() {
+            let dr = r as f64 - target_pt.0;
+            let dc = c as f64 - target_pt.1;
+            let d2 = dr * dr + dc * dc + rng.gen_f64(-0.2, 0.2);
+            if d2 < min_dist_sq {
+                min_dist_sq = d2;
+                best_idx = i;
+            }
+        }
+        trees.swap(0, best_idx);
+
+        // Project remaining trees (1..N-1) along a random sweep vector
+        let (tr0, tc0) = trees[0];
+        let angle: f64 = rng.gen_f64(0.0, 2.0 * std::f64::consts::PI);
         let vr = angle.cos();
         let vc = angle.sin();
-        let mut tree_keys: Vec<((usize, usize), f64)> = trees
-            .into_iter()
-            .map(|(r, c)| {
-                let jitter = rng.gen_f64(-0.1, 0.1);
-                let key = r as f64 * vr + c as f64 * vc + jitter;
-                ((r, c), key)
+
+        let mut rem: Vec<((usize, usize), f64)> = trees[1..]
+            .iter()
+            .map(|&(r, c)| {
+                let dr = r as f64 - tr0 as f64;
+                let dc = c as f64 - tc0 as f64;
+                let proj = dr * vr + dc * vc + rng.gen_f64(-0.08, 0.08);
+                ((r, c), proj)
             })
             .collect();
-        tree_keys.sort_by(|a, b| a.1.total_cmp(&b.1));
-        trees = tree_keys.into_iter().map(|(pos, _)| pos).collect();
+        rem.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+        let mut sorted_trees = Vec::with_capacity(n);
+        sorted_trees.push(trees[0]);
+        for (pos, _) in rem {
+            sorted_trees.push(pos);
+        }
+        trees = sorted_trees;
 
         let (regions, reg_sizes, min_allowed) = construct_gadget_regions(n, &trees, difficulty, &mut rng);
 
@@ -800,9 +851,12 @@ fn main() {
     println!("===============================================================");
 
     for &(size, difficulty) in &[
-        (16, "Easy"),
-        (16, "Medium"),
+        (8, "Easy"),
+        (10, "Medium"),
+        (12, "Hard"),
+        (14, "Hard"),
         (16, "Hard"),
+        (20, "Hard"),
     ] {
         let timeout = Duration::from_secs(5);
         if let Some(lvl) = generate_parks_puzzle(size, difficulty, timeout) {
