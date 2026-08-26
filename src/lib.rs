@@ -634,6 +634,7 @@ pub fn generate_non_collinear_polyomino(
     (0..count).map(|i| (out_cells[i].0 as usize, out_cells[i].1 as usize)).collect()
 }
 
+#[inline(always)]
 pub fn generate_non_collinear_polyomino_fast(
     tr: usize,
     tc: usize,
@@ -643,7 +644,6 @@ pub fn generate_non_collinear_polyomino_fast(
     rng: &mut SimpleRng,
     out_cells: &mut [(u8, u8); 64],
 ) -> usize {
-    let dirs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
     let mut last_len = 0;
     let mut last_cells = [(0u8, 0u8); 64];
 
@@ -657,18 +657,22 @@ pub fn generate_non_collinear_polyomino_fast(
         let mut frontier: [MaybeUninit<(u8, u8)>; 64] = [MaybeUninit::uninit(); 64];
         let mut frontier_len = 0;
 
-        for &(dr, dc) in &dirs {
-            let nr = tr as i32 + dr;
-            let nc = tc as i32 + dc;
-            if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                let ur = nr as usize;
-                let uc = nc as usize;
-                let idx = ur * n + uc;
-                if regions[idx] == -1 {
-                    frontier[frontier_len].write((ur as u8, uc as u8));
-                    frontier_len += 1;
-                }
-            }
+        // Add 4-neighbors of start cell
+        if tr > 0 && regions[(tr - 1) * n + tc] == -1 {
+            frontier[frontier_len].write(((tr - 1) as u8, tc as u8));
+            frontier_len += 1;
+        }
+        if tr + 1 < n && regions[(tr + 1) * n + tc] == -1 {
+            frontier[frontier_len].write(((tr + 1) as u8, tc as u8));
+            frontier_len += 1;
+        }
+        if tc > 0 && regions[tr * n + (tc - 1)] == -1 {
+            frontier[frontier_len].write((tr as u8, (tc - 1) as u8));
+            frontier_len += 1;
+        }
+        if tc + 1 < n && regions[tr * n + (tc + 1)] == -1 {
+            frontier[frontier_len].write((tr as u8, (tc + 1) as u8));
+            frontier_len += 1;
         }
 
         while cell_count < target_size && frontier_len > 0 {
@@ -686,21 +690,32 @@ pub fn generate_non_collinear_polyomino_fast(
             cell_list[cell_count] = (r_u8, c_u8);
             cell_count += 1;
 
-            for &(dr, dc) in &dirs {
-                let nr = r as i32 + dr;
-                let nc = c as i32 + dc;
-                if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                    let ur = nr as usize;
-                    let uc = nc as usize;
-                    let cand = (ur as u8, uc as u8);
-                    let n_idx = ur * n + uc;
-                    if regions[n_idx] == -1
-                        && !cell_list[..cell_count].contains(&cand)
-                        && frontier_len < 64
-                    {
-                        frontier[frontier_len].write(cand);
-                        frontier_len += 1;
-                    }
+            if r > 0 && regions[c_idx - n] == -1 {
+                let cand_u = (r_u8 - 1, c_u8);
+                if !cell_list[..cell_count].contains(&cand_u) && frontier_len < 64 {
+                    frontier[frontier_len].write(cand_u);
+                    frontier_len += 1;
+                }
+            }
+            if r + 1 < n && regions[c_idx + n] == -1 {
+                let cand_d = (r_u8 + 1, c_u8);
+                if !cell_list[..cell_count].contains(&cand_d) && frontier_len < 64 {
+                    frontier[frontier_len].write(cand_d);
+                    frontier_len += 1;
+                }
+            }
+            if c > 0 && regions[c_idx - 1] == -1 {
+                let cand_l = (r_u8, c_u8 - 1);
+                if !cell_list[..cell_count].contains(&cand_l) && frontier_len < 64 {
+                    frontier[frontier_len].write(cand_l);
+                    frontier_len += 1;
+                }
+            }
+            if c + 1 < n && regions[c_idx + 1] == -1 {
+                let cand_r = (r_u8, c_u8 + 1);
+                if !cell_list[..cell_count].contains(&cand_r) && frontier_len < 64 {
+                    frontier[frontier_len].write(cand_r);
+                    frontier_len += 1;
                 }
             }
         }
@@ -769,8 +784,6 @@ pub fn is_region_connected_fast(n: usize, regions: &[u16; MAX_CELLS], reg_id: u1
     tail += 1;
     let mut seen = 0;
 
-    let dirs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
-
     while head < tail {
         let curr = unsafe { queue[head].assume_init() } as usize;
         head += 1;
@@ -779,17 +792,25 @@ pub fn is_region_connected_fast(n: usize, regions: &[u16; MAX_CELLS], reg_id: u1
         let r = curr / n;
         let c = curr % n;
 
-        for &(dr, dc) in &dirs {
-            let nr = r as i32 + dr;
-            let nc = c as i32 + dc;
-            if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                let n_idx = nr as usize * n + nc as usize;
-                if regions[n_idx] == reg_id && !visited[n_idx] {
-                    visited[n_idx] = true;
-                    queue[tail].write(n_idx as u16);
-                    tail += 1;
-                }
-            }
+        if r > 0 && regions[curr - n] == reg_id && !visited[curr - n] {
+            visited[curr - n] = true;
+            queue[tail].write((curr - n) as u16);
+            tail += 1;
+        }
+        if r + 1 < n && regions[curr + n] == reg_id && !visited[curr + n] {
+            visited[curr + n] = true;
+            queue[tail].write((curr + n) as u16);
+            tail += 1;
+        }
+        if c > 0 && regions[curr - 1] == reg_id && !visited[curr - 1] {
+            visited[curr - 1] = true;
+            queue[tail].write((curr - 1) as u16);
+            tail += 1;
+        }
+        if c + 1 < n && regions[curr + 1] == reg_id && !visited[curr + 1] {
+            visited[curr + 1] = true;
+            queue[tail].write((curr + 1) as u16);
+            tail += 1;
         }
     }
 
@@ -989,21 +1010,24 @@ pub fn construct_gadget_regions_fast(
             if c > max_c { max_c = c; }
         }
 
-        for dr in -1i32..=1 {
-            for dc in -1i32..=1 {
-                let nr = tr0 as i32 + dr;
-                let nc = tc0 as i32 + dc;
-                if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                    let idx = nr as usize * n + nc as usize;
-                    if regions[idx] != 0 {
-                        elim_time[idx] = elim_time[idx].min(0);
-                    }
+        let r0_min = if tr0 > 0 { tr0 - 1 } else { 0 };
+        let r0_max = if tr0 + 1 < n { tr0 + 1 } else { n - 1 };
+        let c0_min = if tc0 > 0 { tc0 - 1 } else { 0 };
+        let c0_max = if tc0 + 1 < n { tc0 + 1 } else { n - 1 };
+        for r in r0_min..=r0_max {
+            let r_off = r * n;
+            for c in c0_min..=c0_max {
+                let idx = r_off + c;
+                if regions[idx] != 0 {
+                    elim_time[idx] = elim_time[idx].min(0);
                 }
             }
         }
+
         for r in min_r..=max_r {
+            let r_off = r * n;
             for c in min_c..=max_c {
-                let idx = r * n + c;
+                let idx = r_off + c;
                 if regions[idx] != 0 {
                     elim_time[idx] = elim_time[idx].min(0);
                 }
@@ -1063,25 +1087,28 @@ pub fn construct_gadget_regions_fast(
         }
 
         if a1_len == 1 || min_r == max_r {
+            let row_off = min_r * n;
             for c in 0..n {
-                let idx = min_r * n + c;
+                let idx = row_off + c;
                 if regions[idx] != 1 {
                     elim_time[idx] = elim_time[idx].min(0);
                 }
             }
         }
         if a1_len == 1 || min_c == max_c {
-            for r in 0..n {
-                let idx = r * n + min_c;
+            let mut idx = min_c;
+            for _ in 0..n {
                 if regions[idx] != 1 {
                     elim_time[idx] = elim_time[idx].min(0);
                 }
+                idx += n;
             }
         }
         if (max_r - min_r <= 1) && (max_c - min_c <= 1) {
             for r in min_r..=max_r {
+                let row_off = r * n;
                 for c in min_c..=max_c {
-                    let idx = r * n + c;
+                    let idx = row_off + c;
                     if regions[idx] != 1 {
                         elim_time[idx] = elim_time[idx].min(0);
                     }
@@ -1094,56 +1121,66 @@ pub fn construct_gadget_regions_fast(
     for step in actual_anchors..n {
         let (tr, tc) = trees[step];
         let s_i = step as i16;
+        let row_offset = tr * n;
         for c in 0..n {
-            let idx = tr * n + c;
-            elim_time[idx] = elim_time[idx].min(s_i);
+            let idx = row_offset + c;
+            if s_i < elim_time[idx] {
+                elim_time[idx] = s_i;
+            }
         }
-        for r in 0..n {
-            let idx = r * n + tc;
-            elim_time[idx] = elim_time[idx].min(s_i);
+        let mut col_idx = tc;
+        for _ in 0..n {
+            if s_i < elim_time[col_idx] {
+                elim_time[col_idx] = s_i;
+            }
+            col_idx += n;
         }
-        for dr in -1i32..=1 {
-            for dc in -1i32..=1 {
-                let nr = tr as i32 + dr;
-                let nc = tc as i32 + dc;
-                if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                    let idx = nr as usize * n + nc as usize;
-                    elim_time[idx] = elim_time[idx].min(s_i);
+        let r_min = if tr > 0 { tr - 1 } else { 0 };
+        let r_max = if tr + 1 < n { tr + 1 } else { n - 1 };
+        let c_min = if tc > 0 { tc - 1 } else { 0 };
+        let c_max = if tc + 1 < n { tc + 1 } else { n - 1 };
+        for r in r_min..=r_max {
+            let r_off = r * n;
+            for c in c_min..=c_max {
+                let idx = r_off + c;
+                if s_i < elim_time[idx] {
+                    elim_time[idx] = s_i;
                 }
             }
         }
     }
 
     // 4. Strict Invariant Flood Fill for non-anchor regions
-    let mut queue: [MaybeUninit<(u8, u8, u8)>; 1024] = [MaybeUninit::uninit(); 1024];
+    let mut queue: [MaybeUninit<(u16, u16)>; MAX_CELLS] = [MaybeUninit::uninit(); MAX_CELLS];
     let mut head = 0;
     let mut tail = 0;
 
-    let dirs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
-
     for reg_id in actual_anchors..n {
         let (tr, tc) = trees[reg_id];
-        for &(dr, dc) in &dirs {
-            let nr = tr as i32 + dr;
-            let nc = tc as i32 + dc;
-            if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                let ur = nr as usize;
-                let uc = nc as usize;
-                if regions[ur * n + uc] == -1 {
-                    queue[tail].write((ur as u8, uc as u8, reg_id as u8));
-                    tail += 1;
-                }
-            }
+        let u_reg = reg_id as u16;
+        if tr > 0 && regions[(tr - 1) * n + tc] == -1 {
+            queue[tail].write((((tr - 1) * n + tc) as u16, u_reg));
+            tail += 1;
+        }
+        if tr + 1 < n && regions[(tr + 1) * n + tc] == -1 {
+            queue[tail].write((((tr + 1) * n + tc) as u16, u_reg));
+            tail += 1;
+        }
+        if tc > 0 && regions[tr * n + (tc - 1)] == -1 {
+            queue[tail].write(((tr * n + tc - 1) as u16, u_reg));
+            tail += 1;
+        }
+        if tc + 1 < n && regions[tr * n + (tc + 1)] == -1 {
+            queue[tail].write(((tr * n + tc + 1) as u16, u_reg));
+            tail += 1;
         }
     }
 
     while head < tail {
-        let (r_u8, c_u8, reg_id_u8) = unsafe { queue[head].assume_init() };
+        let (idx_u16, reg_id_u16) = unsafe { queue[head].assume_init() };
         head += 1;
-        let r = r_u8 as usize;
-        let c = c_u8 as usize;
-        let reg_id = reg_id_u8 as usize;
-        let idx = r * n + c;
+        let idx = idx_u16 as usize;
+        let reg_id = reg_id_u16 as usize;
 
         if regions[idx] != -1 {
             continue;
@@ -1151,99 +1188,116 @@ pub fn construct_gadget_regions_fast(
         if elim_time[idx] < reg_id as i16 {
             regions[idx] = reg_id as i16;
             out_reg_sizes[reg_id] += 1;
-            for &(dr, dc) in &dirs {
-                let nr = r as i32 + dr;
-                let nc = c as i32 + dc;
-                if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                    let ur = nr as usize;
-                    let uc = nc as usize;
-                    if regions[ur * n + uc] == -1 && tail < 1024 {
-                        queue[tail].write((ur as u8, uc as u8, reg_id_u8));
-                        tail += 1;
-                    }
-                }
+            let r = idx / n;
+            let c = idx % n;
+            if r > 0 && regions[idx - n] == -1 && tail < MAX_CELLS {
+                queue[tail].write(((idx - n) as u16, reg_id_u16));
+                tail += 1;
+            }
+            if r + 1 < n && regions[idx + n] == -1 && tail < MAX_CELLS {
+                queue[tail].write(((idx + n) as u16, reg_id_u16));
+                tail += 1;
+            }
+            if c > 0 && regions[idx - 1] == -1 && tail < MAX_CELLS {
+                queue[tail].write(((idx - 1) as u16, reg_id_u16));
+                tail += 1;
+            }
+            if c + 1 < n && regions[idx + 1] == -1 && tail < MAX_CELLS {
+                queue[tail].write(((idx + 1) as u16, reg_id_u16));
+                tail += 1;
             }
         }
     }
 
-    // Strictly Connected Straggler Drain
-    loop {
-        let mut unassigned: [MaybeUninit<u16>; MAX_CELLS] = [MaybeUninit::uninit(); MAX_CELLS];
-        let mut unassigned_len = 0;
+    // 5. Strictly Connected Straggler Drain
+    let mut unassigned: [u16; MAX_CELLS] = [0u16; MAX_CELLS];
+    let mut unassigned_len = 0;
 
-        for idx in 0..total_cells {
-            if regions[idx] == -1 {
-                unassigned[unassigned_len].write(idx as u16);
-                unassigned_len += 1;
-            }
+    for idx in 0..total_cells {
+        if regions[idx] == -1 {
+            unassigned[unassigned_len] = idx as u16;
+            unassigned_len += 1;
         }
-        if unassigned_len == 0 {
-            break;
-        }
+    }
 
-        // Fast in-place insertion sort
+    if unassigned_len > 0 {
+        // Sort once by elim_time
         for i in 1..unassigned_len {
             let mut j = i;
-            while j > 0 {
-                let prev_idx = unsafe { unassigned[j - 1].assume_init() } as usize;
-                let curr_idx = unsafe { unassigned[j].assume_init() } as usize;
-                if elim_time[prev_idx] > elim_time[curr_idx] {
-                    unassigned.swap(j - 1, j);
-                    j -= 1;
-                } else {
-                    break;
-                }
+            while j > 0 && elim_time[unassigned[j - 1] as usize] > elim_time[unassigned[j] as usize] {
+                unassigned.swap(j - 1, j);
+                j -= 1;
             }
         }
 
-        let mut progress = false;
+        loop {
+            let mut progress = false;
+            let mut write_pos = 0;
 
-        for i in 0..unassigned_len {
-            let idx = unsafe { unassigned[i].assume_init() } as usize;
-            if regions[idx] != -1 {
-                continue;
-            }
-            let r = idx / n;
-            let c = idx % n;
+            for read_pos in 0..unassigned_len {
+                let idx = unassigned[read_pos] as usize;
+                if regions[idx] != -1 {
+                    continue;
+                }
+                let r = idx / n;
+                let c = idx % n;
+                let elim = elim_time[idx];
 
-            let mut adj_neighbors = [0usize; 4];
-            let mut adj_len = 0;
-            let mut valid_neighbors = [0usize; 4];
-            let mut valid_len = 0;
+                let mut max_valid: i16 = -1;
+                let mut max_adj: i16 = -1;
 
-            for &(dr, dc) in &dirs {
-                let nr = r as i32 + dr;
-                let nc = c as i32 + dc;
-                if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                    let n_idx = nr as usize * n + nc as usize;
-                    let n_reg = regions[n_idx];
+                if r > 0 {
+                    let n_reg = regions[idx - n];
                     if n_reg != -1 {
-                        let u_reg = n_reg as usize;
-                        adj_neighbors[adj_len] = u_reg;
-                        adj_len += 1;
-                        if u_reg >= actual_anchors && elim_time[idx] < n_reg {
-                            valid_neighbors[valid_len] = u_reg;
-                            valid_len += 1;
+                        if n_reg > max_adj { max_adj = n_reg; }
+                        if n_reg >= actual_anchors as i16 && elim < n_reg && n_reg > max_valid {
+                            max_valid = n_reg;
                         }
                     }
                 }
+                if r + 1 < n {
+                    let n_reg = regions[idx + n];
+                    if n_reg != -1 {
+                        if n_reg > max_adj { max_adj = n_reg; }
+                        if n_reg >= actual_anchors as i16 && elim < n_reg && n_reg > max_valid {
+                            max_valid = n_reg;
+                        }
+                    }
+                }
+                if c > 0 {
+                    let n_reg = regions[idx - 1];
+                    if n_reg != -1 {
+                        if n_reg > max_adj { max_adj = n_reg; }
+                        if n_reg >= actual_anchors as i16 && elim < n_reg && n_reg > max_valid {
+                            max_valid = n_reg;
+                        }
+                    }
+                }
+                if c + 1 < n {
+                    let n_reg = regions[idx + 1];
+                    if n_reg != -1 {
+                        if n_reg > max_adj { max_adj = n_reg; }
+                        if n_reg >= actual_anchors as i16 && elim < n_reg && n_reg > max_valid {
+                            max_valid = n_reg;
+                        }
+                    }
+                }
+
+                let chosen = if max_valid != -1 { max_valid } else { max_adj };
+                if chosen != -1 {
+                    regions[idx] = chosen;
+                    out_reg_sizes[chosen as usize] += 1;
+                    progress = true;
+                } else {
+                    unassigned[write_pos] = idx as u16;
+                    write_pos += 1;
+                }
             }
 
-            if valid_len > 0 {
-                let chosen = *valid_neighbors[..valid_len].iter().max().unwrap();
-                regions[idx] = chosen as i16;
-                out_reg_sizes[chosen] += 1;
-                progress = true;
-            } else if adj_len > 0 {
-                let chosen = *adj_neighbors[..adj_len].iter().max().unwrap();
-                regions[idx] = chosen as i16;
-                out_reg_sizes[chosen] += 1;
-                progress = true;
+            unassigned_len = write_pos;
+            if !progress || unassigned_len == 0 {
+                break;
             }
-        }
-
-        if !progress {
-            break;
         }
     }
 
