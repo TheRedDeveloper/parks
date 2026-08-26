@@ -989,38 +989,23 @@ pub fn construct_gadget_regions_fast(
             if c > max_c { max_c = c; }
         }
 
-        if g0_size == 1 {
-            for c in 0..n {
-                let idx = min_r * n + c;
-                if regions[idx] != 0 {
-                    elim_time[idx] = elim_time[idx].min(0);
-                }
-            }
-            for r in 0..n {
-                let idx = r * n + min_c;
-                if regions[idx] != 0 {
-                    elim_time[idx] = elim_time[idx].min(0);
-                }
-            }
-            for dr in -1i32..=1 {
-                for dc in -1i32..=1 {
-                    let nr = min_r as i32 + dr;
-                    let nc = min_c as i32 + dc;
-                    if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
-                        let idx = nr as usize * n + nc as usize;
-                        if regions[idx] != 0 {
-                            elim_time[idx] = elim_time[idx].min(0);
-                        }
-                    }
-                }
-            }
-        } else if (max_r - min_r <= 1) && (max_c - min_c <= 1) {
-            for r in min_r..=max_r {
-                for c in min_c..=max_c {
-                    let idx = r * n + c;
+        for dr in -1i32..=1 {
+            for dc in -1i32..=1 {
+                let nr = tr0 as i32 + dr;
+                let nc = tc0 as i32 + dc;
+                if nr >= 0 && nr < n as i32 && nc >= 0 && nc < n as i32 {
+                    let idx = nr as usize * n + nc as usize;
                     if regions[idx] != 0 {
                         elim_time[idx] = elim_time[idx].min(0);
                     }
+                }
+            }
+        }
+        for r in min_r..=max_r {
+            for c in min_c..=max_c {
+                let idx = r * n + c;
+                if regions[idx] != 0 {
+                    elim_time[idx] = elim_time[idx].min(0);
                 }
             }
         }
@@ -1039,8 +1024,11 @@ pub fn construct_gadget_regions_fast(
     let mut a1_len = 1;
 
     if a1_target > 1 {
-        let mut nbrs = [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)];
-        rng.shuffle(&mut nbrs);
+        let nbrs = if tr1 != tr0 {
+            [(0i32, -1i32), (0, 1), (-1, 0), (1, 0)]
+        } else {
+            [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)]
+        };
         for &(dr, dc) in &nbrs {
             let nr = tr1 as i32 + dr;
             let nc = tc1 as i32 + dc;
@@ -1296,68 +1284,108 @@ pub fn generate_parks_puzzle_with_rng(
         let use_center = match difficulty {
             "Easy" => false,
             "Medium" => rng.gen_f64(0.0, 1.0) < 0.50,
-            _ => rng.gen_f64(0.0, 1.0) < 0.80,
+            _ => true,
         };
 
-        let target_pt = if use_center {
-            let mid = (n as f64 - 1.0) / 2.0;
-            let offset_max = (n as f64 * 0.15).max(1.0);
-            (
-                mid + rng.gen_f64(-offset_max, offset_max),
-                mid + rng.gen_f64(-offset_max, offset_max),
-            )
+        if use_center {
+            // Map trees by row and by column
+            let mut tree_by_row = [(0usize, 0usize); MAX_N];
+            let mut tree_by_col = [(0usize, 0usize); MAX_N];
+            for i in 0..n {
+                let (r, c) = trees[i];
+                tree_by_row[r] = (r, c);
+                tree_by_col[c] = (r, c);
+            }
+
+            let sweep_by_row = rng.next_u64() % 2 == 0;
+
+            if sweep_by_row {
+                let r_c = (n / 2).clamp(1, n - 2);
+                let mut out_idx = 0;
+                trees[out_idx] = tree_by_row[r_c];
+                out_idx += 1;
+
+                let mut d = 1;
+                while out_idx < n {
+                    if r_c + d < n {
+                        trees[out_idx] = tree_by_row[r_c + d];
+                        out_idx += 1;
+                    }
+                    if out_idx < n && r_c >= d {
+                        trees[out_idx] = tree_by_row[r_c - d];
+                        out_idx += 1;
+                    }
+                    d += 1;
+                }
+            } else {
+                let c_c = (n / 2).clamp(1, n - 2);
+                let mut out_idx = 0;
+                trees[out_idx] = tree_by_col[c_c];
+                out_idx += 1;
+
+                let mut d = 1;
+                while out_idx < n {
+                    if c_c + d < n {
+                        trees[out_idx] = tree_by_col[c_c + d];
+                        out_idx += 1;
+                    }
+                    if out_idx < n && c_c >= d {
+                        trees[out_idx] = tree_by_col[c_c - d];
+                        out_idx += 1;
+                    }
+                    d += 1;
+                }
+            }
         } else {
             let edge = rng.gen_range(0, 4);
             let rnd_pos = rng.gen_f64(0.0, (n - 1) as f64);
-            match edge {
+            let target_pt = match edge {
                 0 => (0.0, rnd_pos),
                 1 => ((n - 1) as f64, rnd_pos),
                 2 => (rnd_pos, 0.0),
                 _ => (rnd_pos, (n - 1) as f64),
+            };
+
+            // Pick Tree 0 closest to target_pt
+            let mut best_idx = 0;
+            let mut min_dist_sq = f64::MAX;
+            for i in 0..n {
+                let (r, c) = trees[i];
+                let dr = r as f64 - target_pt.0;
+                let dc = c as f64 - target_pt.1;
+                let d2 = dr * dr + dc * dc + rng.gen_f64(-0.2, 0.2);
+                if d2 < min_dist_sq {
+                    min_dist_sq = d2;
+                    best_idx = i;
+                }
             }
-        };
+            trees.swap(0, best_idx);
 
-        // Pick Tree 0 closest to target_pt
-        let mut best_idx = 0;
-        let mut min_dist_sq = f64::MAX;
-        for i in 0..n {
-            let (r, c) = trees[i];
-            let dr = r as f64 - target_pt.0;
-            let dc = c as f64 - target_pt.1;
-            let d2 = dr * dr + dc * dc + rng.gen_f64(-0.2, 0.2);
-            if d2 < min_dist_sq {
-                min_dist_sq = d2;
-                best_idx = i;
+            let (tr0, tc0) = trees[0];
+            let angle: f64 = rng.gen_f64(0.0, 2.0 * std::f64::consts::PI);
+            let vr = angle.cos();
+            let vc = angle.sin();
+            let mut rem = [((0usize, 0usize), 0.0f64); MAX_N];
+            for i in 1..n {
+                let (r, c) = trees[i];
+                let dr = r as f64 - tr0 as f64;
+                let dc = c as f64 - tc0 as f64;
+                let proj = dr * vr + dc * vc + rng.gen_f64(-0.08, 0.08);
+                rem[i - 1] = ((r, c), proj);
             }
-        }
-        trees.swap(0, best_idx);
-
-        // Project remaining trees (1..N-1) along a random sweep vector
-        let (tr0, tc0) = trees[0];
-        let angle: f64 = rng.gen_f64(0.0, 2.0 * std::f64::consts::PI);
-        let vr = angle.cos();
-        let vc = angle.sin();
-
-        let mut rem = [((0usize, 0usize), 0.0f64); MAX_N];
-        for i in 1..n {
-            let (r, c) = trees[i];
-            let dr = r as f64 - tr0 as f64;
-            let dc = c as f64 - tc0 as f64;
-            let proj = dr * vr + dc * vc + rng.gen_f64(-0.08, 0.08);
-            rem[i - 1] = ((r, c), proj);
-        }
-        let rem_len = n - 1;
-        let rem_slice = &mut rem[..rem_len];
-        for i in 1..rem_len {
-            let mut j = i;
-            while j > 0 && rem_slice[j - 1].1 > rem_slice[j].1 {
-                rem_slice.swap(j - 1, j);
-                j -= 1;
+            let rem_len = n - 1;
+            let rem_slice = &mut rem[..rem_len];
+            for i in 1..rem_len {
+                let mut j = i;
+                while j > 0 && rem_slice[j - 1].1 > rem_slice[j].1 {
+                    rem_slice.swap(j - 1, j);
+                    j -= 1;
+                }
             }
-        }
 
-        for i in 1..n {
-            trees[i] = rem[i - 1].0;
+            for i in 1..n {
+                trees[i] = rem[i - 1].0;
+            }
         }
 
         let min_allowed = construct_gadget_regions_fast(

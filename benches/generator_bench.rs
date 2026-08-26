@@ -165,7 +165,7 @@ fn main() {
         (12, "Hard"),
         (14, "Hard"),
         (16, "Hard"),
-        (20, "Hard"),
+        (20, "Easy"),
     ] {
         let mut rng = SimpleRng::with_seed(42);
         bench(

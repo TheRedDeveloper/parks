@@ -71,6 +71,7 @@ fn test_solver_finds_tree_solution() {
         let nbr_masks = build_neighbor_masks(n);
 
         let sols = solve_fast(n, &regions, &nbr_masks, 10);
+        println!("N={}, found {} solutions", n, sols.len());
         assert!(!sols.is_empty(), "Solver should find at least the constructed solution");
 
         // Verify that constructed solution is in solutions
