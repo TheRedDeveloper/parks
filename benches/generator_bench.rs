@@ -1,6 +1,5 @@
 use parks::{
-    all_regions_connected, build_neighbor_masks, construct_gadget_regions,
-    generate_parks_puzzle_with_rng, generate_tree_solution, solve_fast, SimpleRng,
+    Difficulty, SimpleRng, all_regions_connected, build_neighbor_masks, construct_gadget_regions, generate_parks_puzzle_with_rng, generate_tree_solution, solve_fast,
 };
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -104,11 +103,11 @@ fn main() {
     }
 
     println!("\n--- 2. Sub-component: construct_gadget_regions ---");
-    for &(n, diff) in &[(8, "Easy"), (10, "Medium"), (14, "Hard"), (20, "Hard")] {
+    for &(n, diff) in &[(8, &Difficulty::Easy), (10, &Difficulty::Medium), (14, &Difficulty::Hard), (20, &Difficulty::Hard)] {
         let mut rng = SimpleRng::with_seed(12345);
         let trees = generate_tree_solution(n, &mut rng);
         bench(
-            &format!("gadget_regions_{}x{}_{}", n, n, diff),
+            &format!("gadget_regions_{}x{}_{:?}", n, n, diff),
             Duration::from_millis(50),
             Duration::from_millis(200),
             || {
@@ -123,12 +122,12 @@ fn main() {
     }
 
     println!("\n--- 3. Sub-component: all_regions_connected ---");
-    for &(n, diff) in &[(8, "Easy"), (10, "Medium"), (14, "Hard"), (20, "Hard")] {
+    for &(n, diff) in &[(8, &Difficulty::Easy), (10, &Difficulty::Medium), (14, &Difficulty::Hard), (20, &Difficulty::Hard)] {
         let mut rng = SimpleRng::with_seed(12345);
         let trees = generate_tree_solution(n, &mut rng);
         let (regions, _, _) = construct_gadget_regions(n, &trees, diff, &mut rng);
         bench(
-            &format!("connectivity_{}x{}_{}", n, n, diff),
+            &format!("connectivity_{}x{}_{:?}", n, n, diff),
             Duration::from_millis(50),
             Duration::from_millis(200),
             || {
@@ -138,13 +137,13 @@ fn main() {
     }
 
     println!("\n--- 4. Sub-component: solve_fast (MRV bitmask solver) ---");
-    for &(n, diff) in &[(8, "Easy"), (10, "Medium"), (14, "Hard")] {
+    for &(n, diff) in &[(8, &Difficulty::Easy), (10, &Difficulty::Medium), (14, &Difficulty::Hard)] {
         let mut rng = SimpleRng::with_seed(12345);
         let trees = generate_tree_solution(n, &mut rng);
         let (regions, _, _) = construct_gadget_regions(n, &trees, diff, &mut rng);
         let nbr_masks = build_neighbor_masks(n);
         bench(
-            &format!("solve_fast_{}x{}_{}", n, n, diff),
+            &format!("solve_fast_{}x{}_{:?}", n, n, diff),
             Duration::from_millis(50),
             Duration::from_millis(200),
             || {
@@ -160,16 +159,16 @@ fn main() {
 
     println!("\n--- 5. End-to-End: generate_parks_puzzle ---");
     for &(n, diff) in &[
-        (8, "Easy"),
-        (10, "Medium"),
-        (12, "Hard"),
-        (14, "Hard"),
-        (16, "Hard"),
-        (20, "Easy"),
+        (8, &Difficulty::Easy),
+        (10, &Difficulty::Medium),
+        (12, &Difficulty::Hard),
+        (14, &Difficulty::Hard),
+        (16, &Difficulty::Hard),
+        (20, &Difficulty::Easy),
     ] {
         let mut rng = SimpleRng::with_seed(42);
         bench(
-            &format!("full_gen_{}x{}_{}", n, n, diff),
+            &format!("full_gen_{}x{}_{:?}", n, n, diff),
             Duration::from_millis(100),
             Duration::from_millis(800),
             || {

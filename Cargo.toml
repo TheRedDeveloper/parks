@@ -1,9 +1,11 @@
 [package]
 name = "parks"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+ply-engine = { git = "https://github.com/TheRedDeveloper/ply-engine", features = ["net", "net-json", "audio", "storage"] }
+fxhash = "0.2"
 
 [[bench]]
 name = "generator_bench"

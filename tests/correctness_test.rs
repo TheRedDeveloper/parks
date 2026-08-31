@@ -1,7 +1,7 @@
 use parks::{
     all_regions_connected, build_neighbor_masks, construct_gadget_regions,
     generate_parks_puzzle_with_rng, generate_tree_solution, is_region_connected, solve_fast,
-    SimpleRng,
+    SimpleRng, Difficulty
 };
 use std::collections::HashSet;
 use std::time::Duration;
@@ -40,10 +40,10 @@ fn test_tree_solution_validity() {
 fn test_gadget_regions_and_connectivity() {
     let mut rng = SimpleRng::with_seed(100);
     for &(n, diff) in &[
-        (8, "Easy"),
-        (10, "Medium"),
-        (12, "Hard"),
-        (14, "Hard"),
+        (8, &Difficulty::Easy),
+        (10, &Difficulty::Medium),
+        (12, &Difficulty::Hard),
+        (14, &Difficulty::Hard),
     ] {
         let trees = generate_tree_solution(n, &mut rng);
         let (regions, reg_sizes, _min_allowed) = construct_gadget_regions(n, &trees, diff, &mut rng);
@@ -67,7 +67,7 @@ fn test_solver_finds_tree_solution() {
     let mut rng = SimpleRng::with_seed(2024);
     for n in [8, 10, 12] {
         let trees = generate_tree_solution(n, &mut rng);
-        let (regions, _, _) = construct_gadget_regions(n, &trees, "Hard", &mut rng);
+        let (regions, _, _) = construct_gadget_regions(n, &trees, &Difficulty::Hard, &mut rng);
         let nbr_masks = build_neighbor_masks(n);
 
         let sols = solve_fast(n, &regions, &nbr_masks, 10);
@@ -90,9 +90,9 @@ fn test_solver_finds_tree_solution() {
 #[test]
 fn test_end_to_end_generator() {
     let mut rng = SimpleRng::with_seed(777);
-    for &(n, diff) in &[(8, "Easy"), (10, "Medium"), (12, "Hard")] {
+    for &(n, diff) in &[(8, &Difficulty::Easy), (10, &Difficulty::Medium), (12, &Difficulty::Hard)] {
         let lvl = generate_parks_puzzle_with_rng(n, diff, Duration::from_secs(5), &mut rng);
-        assert!(lvl.is_some(), "Should successfully generate a {}x{} {} puzzle", n, n, diff);
+        assert!(lvl.is_some(), "Should successfully generate a {}x{} {:?} puzzle", n, n, diff);
         let lvl = lvl.unwrap();
         assert_eq!(lvl.size, n);
         assert_eq!(lvl.solution_trees.len(), n);

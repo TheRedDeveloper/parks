@@ -138,9 +138,17 @@ impl BitSet1024 {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Difficulty {
+    Easy,
+    Medium,
+    Hard,
+}
+
+#[derive(Clone)]
 pub struct ParksLevel {
     pub size: usize,
-    pub difficulty: String,
+    pub difficulty: Difficulty,
     pub solution_trees: Vec<(usize, usize)>,
     pub regions: Vec<Vec<usize>>,
     pub region_sizes: Vec<usize>,
@@ -919,7 +927,7 @@ pub fn all_regions_connected_fast(n: usize, regions: &[u16; MAX_CELLS]) -> bool 
 pub fn construct_gadget_regions(
     n: usize,
     trees: &[(usize, usize)],
-    difficulty: &str,
+    difficulty: &Difficulty,
     rng: &mut SimpleRng,
 ) -> (Vec<Vec<usize>>, Vec<usize>, usize) {
     let mut tree_arr = [(0usize, 0usize); MAX_N];
@@ -950,7 +958,7 @@ pub fn construct_gadget_regions(
 pub fn construct_gadget_regions_fast(
     n: usize,
     trees: &[(usize, usize)],
-    difficulty: &str,
+    difficulty: &Difficulty,
     rng: &mut SimpleRng,
     out_regions: &mut [u16; MAX_CELLS],
     out_reg_sizes: &mut [usize; MAX_N],
@@ -967,17 +975,17 @@ pub fn construct_gadget_regions_fast(
 
     let actual_anchors = 2;
     let min_allowed = match difficulty {
-        "Easy" => 1,
-        "Medium" => 3,
-        _ => 3,
+        Difficulty::Easy => 1,
+        Difficulty::Medium => 3,
+        Difficulty::Hard => 3,
     };
 
     // 1. Group 0: 2D non-linear polyomino (or 1-cell singleton for Easy)
     let (tr0, tc0) = trees[0];
     let g0_size = match difficulty {
-        "Easy" => 1,
-        "Medium" => rng.gen_range(3, 5),
-        _ => rng.gen_range(4, 6),
+        Difficulty::Easy => 1,
+        Difficulty::Medium => rng.gen_range(3, 5),
+        Difficulty::Hard => rng.gen_range(4, 6),
     };
 
     let mut g0_cells = [(0u8, 0u8); 64];
@@ -1038,9 +1046,9 @@ pub fn construct_gadget_regions_fast(
     // 2. Anchor 1 grows adjacent cells
     let (tr1, tc1) = trees[1];
     let a1_target = match difficulty {
-        "Easy" => 2,
-        "Medium" => rng.gen_range(2, 4),
-        _ => rng.gen_range(3, 5),
+        Difficulty::Easy => 2,
+        Difficulty::Medium => rng.gen_range(2, 4),
+        Difficulty::Hard => rng.gen_range(3, 5),
     };
 
     let mut a1_cells = [(0u8, 0u8); 16];
@@ -1308,14 +1316,14 @@ pub fn construct_gadget_regions_fast(
     min_allowed
 }
 
-pub fn generate_parks_puzzle(n: usize, difficulty: &str, timeout: Duration) -> Option<ParksLevel> {
+pub fn generate_parks_puzzle(n: usize, difficulty: &Difficulty, timeout: Duration) -> Option<ParksLevel> {
     let mut rng = SimpleRng::new();
     generate_parks_puzzle_with_rng(n, difficulty, timeout, &mut rng)
 }
 
 pub fn generate_parks_puzzle_with_rng(
     n: usize,
-    difficulty: &str,
+    difficulty: &Difficulty,
     timeout: Duration,
     rng: &mut SimpleRng,
 ) -> Option<ParksLevel> {
@@ -1336,9 +1344,9 @@ pub fn generate_parks_puzzle_with_rng(
         }
 
         let use_center = match difficulty {
-            "Easy" => false,
-            "Medium" => rng.gen_f64(0.0, 1.0) < 0.50,
-            _ => true,
+            Difficulty::Easy => false,
+            Difficulty::Medium => rng.gen_f64(0.0, 1.0) < 0.50,
+            Difficulty::Hard => true,
         };
 
         if use_center {
@@ -1476,7 +1484,7 @@ pub fn generate_parks_puzzle_with_rng(
             }
             return Some(ParksLevel {
                 size: n,
-                difficulty: difficulty.to_string(),
+                difficulty: difficulty.clone(),
                 solution_trees: trees[..n].to_vec(),
                 regions: final_regions,
                 region_sizes: reg_sizes[..n].to_vec(),
@@ -1506,13 +1514,46 @@ pub fn get_region_ansi(reg_id: usize, is_tree: bool) -> String {
     }
 }
 
+pub fn fmt_board(level: &ParksLevel) -> String {
+    let n = level.size;
+    let regions = &level.regions;
+    let trees: HashSet<(usize, usize)> = level.solution_trees.iter().cloned().collect();
+
+    let mut output = String::new();
+    output.push_str(&format!("\n=== Parks Board ({}x{}) | Difficulty: {:?} ===\n", n, n, level.difficulty));
+    output.push_str("    ");
+    for c in 0..n {
+        output.push_str(&format!("{:3} ", c));
+    }
+    output.push('\n');
+    output.push_str(&format!("   +{}", "----".repeat(n) + "+\n"));
+
+    for r in 0..n {
+        output.push_str(&format!("{:2} |", r));
+        for c in 0..n {
+            let reg = regions[r][c];
+            let is_tree = trees.contains(&(r, c));
+            let cell_text = if is_tree {
+                format!("*{:<2} ", reg)
+            } else {
+                format!(" {:<2} ", reg)
+            };
+            output.push_str(&cell_text);
+        }
+        output.push_str("|\n");
+    }
+
+    output.push_str(&format!("   +{}", "----".repeat(n) + "+\n"));
+    output
+}
+
 pub fn print_board(level: &ParksLevel) {
     let n = level.size;
     let regions = &level.regions;
     let trees: HashSet<(usize, usize)> = level.solution_trees.iter().cloned().collect();
     let reset = "\x1b[0m";
 
-    println!("\n=== Parks Board ({}x{}) | Difficulty: {} ===", n, n, level.difficulty);
+    println!("\n=== Parks Board ({}x{}) | Difficulty: {:?} ===", n, n, level.difficulty);
     print!("    ");
     for c in 0..n {
         print!("{:3} ", c);
