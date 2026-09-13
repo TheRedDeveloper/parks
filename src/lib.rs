@@ -138,7 +138,7 @@ impl BitSet1024 {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Difficulty {
     Easy,
     Medium,
@@ -1484,7 +1484,7 @@ pub fn generate_parks_puzzle_with_rng(
             }
             return Some(ParksLevel {
                 size: n,
-                difficulty: difficulty.clone(),
+                difficulty: *difficulty,
                 solution_trees: trees[..n].to_vec(),
                 regions: final_regions,
                 region_sizes: reg_sizes[..n].to_vec(),
