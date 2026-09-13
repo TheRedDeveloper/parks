@@ -74,6 +74,61 @@ fn get_current_screen() -> Screen {
 
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HighlightMode {
+  None,
+  Section,
+  Row,
+  Column,
+}
+
+thread_local! {
+  static HIGHLIGHT_MODE: RefCell<HighlightMode> = RefCell::new(HighlightMode::Section);
+  static EYE_HOLDING: RefCell<bool> = RefCell::new(false);
+  static EYE_INITIAL_MODE: RefCell<HighlightMode> = RefCell::new(HighlightMode::Section);
+  static EYE_HOVERED_OPTION: RefCell<Option<HighlightMode>> = RefCell::new(None);
+}
+
+fn get_highlight_mode() -> HighlightMode {
+  HIGHLIGHT_MODE.with(|m| *m.borrow())
+}
+
+fn set_highlight_mode(mode: HighlightMode) {
+  HIGHLIGHT_MODE.with(|m| *m.borrow_mut() = mode);
+}
+
+fn get_eye_holding() -> bool {
+  EYE_HOLDING.with(|h| *h.borrow())
+}
+
+fn set_eye_holding(holding: bool) {
+  EYE_HOLDING.with(|h| *h.borrow_mut() = holding);
+}
+
+fn get_eye_initial_mode() -> HighlightMode {
+  EYE_INITIAL_MODE.with(|m| *m.borrow())
+}
+
+fn set_eye_initial_mode(mode: HighlightMode) {
+  EYE_INITIAL_MODE.with(|m| *m.borrow_mut() = mode);
+}
+
+fn get_eye_hovered_option() -> Option<HighlightMode> {
+  EYE_HOVERED_OPTION.with(|o| *o.borrow())
+}
+
+fn set_eye_hovered_option(option: Option<HighlightMode>) {
+  EYE_HOVERED_OPTION.with(|o| *o.borrow_mut() = option);
+}
+
+fn get_active_highlight_mode() -> HighlightMode {
+  if get_eye_holding() {
+    get_eye_hovered_option().unwrap_or_else(get_eye_initial_mode)
+  } else {
+    get_highlight_mode()
+  }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Marking {
   NotMarked,
   MarkedTree,
@@ -178,6 +233,9 @@ thread_local! {
 }
 
 fn cell_press(difficulty: &Difficulty, row: usize, col: usize) {
+  if get_eye_holding() {
+    return;
+  }
   end_interaction();
 
   if let Some(mut level) = get_level(difficulty) {
@@ -210,6 +268,9 @@ fn cell_press(difficulty: &Difficulty, row: usize, col: usize) {
 }
 
 fn cell_drag(difficulty: &Difficulty, row: usize, col: usize) {
+  if get_eye_holding() {
+    return;
+  }
   ACTIVE_INTERACTION.with(|ai| {
     let mut ai_borrow = ai.borrow_mut();
     let interaction = match ai_borrow.as_mut() {
@@ -377,6 +438,11 @@ fn draw_top_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
       ui.element().height(grow!()).width(fixed!(100.0 * scaling_factor))
         .image(&graphic!("assets/images/back_placeholder.png"))
         .on_press(move |_, _| {
+          if get_eye_holding() {
+            set_highlight_mode(get_eye_initial_mode());
+            set_eye_holding(false);
+            set_eye_hovered_option(None);
+          }
           set_current_screen(Screen::MainMenu);
         }).empty();
       ui.element().width(grow!())
@@ -413,8 +479,91 @@ fn draw_bottom_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
       }).rotate_visual(|r| r.flip_x()).empty();
       bottom_bar_button(ui, &QUESTION_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
       bottom_bar_button(ui, &PENCIL_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
-      bottom_bar_button(ui, &EYE_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
-      // ui.text(&format!("Trees: {}/{}", level.correct_tree_count(), level.level.solution_trees.len()), |t| t.font_size((100.0 * scaling_factor) as u16).color(WHITE));
+
+      let is_holding = get_eye_holding();
+      let eye_el = ui.element().id("eye_button")
+        .height(fixed!(100.0 * scaling_factor))
+        .width(grow!())
+        .contain(1.0)
+        .image(&EYE_PLACEHOLDER)
+        .on_press(move |_, _| {
+          end_interaction();
+          set_eye_holding(true);
+          set_eye_initial_mode(get_highlight_mode());
+          set_eye_hovered_option(None);
+        });
+
+      if is_holding {
+        eye_el.children(|ui| {
+          ui.element().id("eye_popup_menu")
+            .width(fit!())
+            .height(fit!())
+            .floating(|f| f
+              .attach_parent()
+              .anchor((Right, Bottom), (Right, Top))
+              .z_index(100)
+            )
+            .capture()
+            .background_color(0x1C1C24)
+            .border(|b| b.all((2.0 * scaling_factor).max(1.0) as u16).color(0x3A3A4A).position(Outside))
+            .corner_radius(8.0 * scaling_factor)
+            .layout(|l| l
+              .direction(TopToBottom)
+              .gap((4.0 * scaling_factor) as u16)
+              .padding((6.0 * scaling_factor) as u16)
+            )
+            .children(|ui| {
+              let options = [
+                ("None", HighlightMode::None, "eye_opt_none"),
+                ("Section", HighlightMode::Section, "eye_opt_section"),
+                ("Row", HighlightMode::Row, "eye_opt_row"),
+                ("Column", HighlightMode::Column, "eye_opt_column"),
+              ];
+              let active_mode = get_active_highlight_mode();
+              for (label, mode, id_str) in options {
+                let is_hovered = get_eye_hovered_option() == Some(mode);
+                let is_active = active_mode == mode;
+                let bg_color = if is_hovered {
+                  0x2A62E8
+                } else if is_active {
+                  0x303042
+                } else {
+                  0x1C1C24
+                };
+                let text_color = if is_hovered || is_active {
+                  WHITE
+                } else {
+                  LIGHTGRAY
+                };
+                ui.element().id(id_str)
+                  .width(grow!())
+                  .capture()
+                  .corner_radius(6.0 * scaling_factor)
+                  .background_color(bg_color)
+                  .layout(|l| l
+                    .align(CenterX, CenterY)
+                    .padding((
+                      (8.0 * scaling_factor) as u16,
+                      (14.0 * scaling_factor) as u16,
+                      (8.0 * scaling_factor) as u16,
+                      (14.0 * scaling_factor) as u16,
+                    ))
+                  )
+                  .on_hover(move |_, _| {
+                    set_eye_hovered_option(Some(mode));
+                  })
+                  .children(|ui| {
+                    ui.text(label, |t| t
+                      .font_size((70.0 * scaling_factor) as u16)
+                      .color(text_color)
+                    );
+                  });
+              }
+            });
+        });
+      } else {
+        eye_el.empty();
+      }
     });
 }
 
@@ -423,6 +572,7 @@ fn draw_grid(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
   let border_surround = (8.0 * scaling_factor) as u16;
   let border_large = (10.0 * scaling_factor) as u16;
   let border_small = (5.0 * scaling_factor) as u16;
+  let active_mode = get_active_highlight_mode();
 
   ui.element().width(grow!()).height(grow!()).contain(1.0).id("grid_container")
     .layout(|l| l.padding(20))
@@ -439,6 +589,26 @@ fn draw_grid(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
                 for c in 0..level.size() {
                   let difficulty = level.level.difficulty;
                   let difficulty2 = level.level.difficulty;
+                  let left_border = if c == 0 {
+                    0
+                  } else {
+                    match active_mode {
+                      HighlightMode::None => border_small,
+                      HighlightMode::Section => if level.region(r, c) != level.region(r, c - 1) { border_large } else { border_small },
+                      HighlightMode::Row => border_small,
+                      HighlightMode::Column => border_large,
+                    }
+                  };
+                  let top_border = if r == 0 {
+                    0
+                  } else {
+                    match active_mode {
+                      HighlightMode::None => border_small,
+                      HighlightMode::Section => if level.region(r, c) != level.region(r - 1, c) { border_large } else { border_small },
+                      HighlightMode::Row => border_large,
+                      HighlightMode::Column => border_small,
+                    }
+                  };
                   ui.element().id((format!("cell_{}_{}", r, c).as_str(), 0))
                     .width(grow!()).height(grow!())
                     .layout(|l| l.align(CenterX, CenterY))
@@ -454,8 +624,8 @@ fn draw_grid(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
                       _ => (0.0, 0.0, 0.0, 0.0),
                     })
                     .border(|b| b
-                      .left(if c == 0 { 0 } else if level.region(r, c) != level.region(r, c - 1) { border_large } else { border_small })
-                      .top(if r == 0 { 0 } else if level.region(r, c) != level.region(r - 1, c) { border_large } else { border_small })
+                      .left(left_border)
+                      .top(top_border)
                       .color(DARKGRAY)
                       .position(Middle)
                     )
@@ -502,6 +672,11 @@ fn draw_screen(ui: &mut Ui, screen: Screen) {
     Screen::Game(difficulty) => {
       if is_key_pressed(KeyCode::Escape) {
         end_interaction();
+        if get_eye_holding() {
+          set_highlight_mode(get_eye_initial_mode());
+          set_eye_holding(false);
+          set_eye_hovered_option(None);
+        }
         set_current_screen(Screen::MainMenu);
       }
 
@@ -520,7 +695,27 @@ fn draw_screen(ui: &mut Ui, screen: Screen) {
         redo(&difficulty);
       }
 
-      if is_mouse_button_released(MouseButton::Left) {
+      if get_eye_holding() {
+        let hovered = if ui.pointer_over("eye_opt_none") {
+          Some(HighlightMode::None)
+        } else if ui.pointer_over("eye_opt_section") {
+          Some(HighlightMode::Section)
+        } else if ui.pointer_over("eye_opt_row") {
+          Some(HighlightMode::Row)
+        } else if ui.pointer_over("eye_opt_column") {
+          Some(HighlightMode::Column)
+        } else {
+          None
+        };
+        set_eye_hovered_option(hovered);
+
+        if is_mouse_button_released(MouseButton::Left) || !is_mouse_button_down(MouseButton::Left) {
+          let final_mode = hovered.unwrap_or_else(get_eye_initial_mode);
+          set_highlight_mode(final_mode);
+          set_eye_holding(false);
+          set_eye_hovered_option(None);
+        }
+      } else if is_mouse_button_released(MouseButton::Left) {
         end_interaction();
       }
 
