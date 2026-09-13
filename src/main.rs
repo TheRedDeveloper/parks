@@ -10,6 +10,11 @@ static MONO_FONT: FontAsset = font!("assets/fonts/geist_mono.ttf");
 static CROSS_PLACEHOLDER: GraphicAsset = graphic!("assets/images/cross_placeholder.png");
 static TREE_PLACEHOLDER: GraphicAsset = graphic!("assets/images/tree_placeholder.png");
 
+static UNDO_PLACEHOLDER: GraphicAsset = graphic!("assets/images/undo_placeholder.png");
+static EYE_PLACEHOLDER: GraphicAsset = graphic!("assets/images/eye_placeholder.png");
+static QUESTION_PLACEHOLDER: GraphicAsset = graphic!("assets/images/question_placeholder.png");
+static PENCIL_PLACEHOLDER: GraphicAsset = graphic!("assets/images/pencil_placeholder.png");
+
 fn window_conf() -> macroquad::conf::Conf {
   macroquad::conf::Conf {
     miniquad_conf: miniquad::conf::Conf {
@@ -364,13 +369,62 @@ fn redo(difficulty: &Difficulty) {
   }
 }
 
+fn draw_top_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
+  ui.element()
+    .width(grow!(max: screen_height()-280.0*scaling_factor))
+    .layout(|l| l.padding((20.0 * scaling_factor) as u16))
+    .children(|ui| {
+      ui.element().height(grow!()).width(fixed!(100.0 * scaling_factor))
+        .image(&graphic!("assets/images/back_placeholder.png"))
+        .on_press(move |_, _| {
+          set_current_screen(Screen::MainMenu);
+        }).empty();
+      ui.element().width(grow!())
+        .layout(|l| l.align(CenterX, CenterY))
+        .children(|ui| {
+          ui.text(&format!("{:?}", level.level.difficulty), |t| t.font_size((100.0 * scaling_factor) as u16).color(WHITE));
+        });
+      ui.element().height(grow!()).width(fixed!(100.0 * scaling_factor)).empty();
+    });
+}
+
+fn bottom_bar_button<'ui, 'ply>(ui: &'ui mut Ui<'_, 'ply>, image: &'static GraphicAsset, height: f32, action: impl Fn() + 'static) -> ElementBuilder<'ply, NoId<'ui>> {
+  ui.element().height(fixed!(height)).width(grow!()).contain(1.0)
+    .image(image)
+    .on_release(move |_, _, hovered| {
+      if hovered {
+        action();
+      }
+    })
+}
+
+fn draw_bottom_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
+  let difficulty = level.level.difficulty;
+  ui.element()
+    .width(grow!(max: screen_height()-280.0*scaling_factor))
+    .height(fixed!(140.0 * scaling_factor))
+    .layout(|l| l.padding((20.0 * scaling_factor) as u16))
+    .children(|ui| {
+      bottom_bar_button(ui, &UNDO_PLACEHOLDER, 100.0 * scaling_factor, move || {
+        undo(&difficulty);
+      }).empty();
+      bottom_bar_button(ui, &UNDO_PLACEHOLDER, 100.0 * scaling_factor, move || {
+        redo(&difficulty);
+      }).rotate_visual(|r| r.flip_x()).empty();
+      bottom_bar_button(ui, &QUESTION_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
+      bottom_bar_button(ui, &PENCIL_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
+      bottom_bar_button(ui, &EYE_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
+      // ui.text(&format!("Trees: {}/{}", level.correct_tree_count(), level.level.solution_trees.len()), |t| t.font_size((100.0 * scaling_factor) as u16).color(WHITE));
+    });
+}
+
 fn draw_grid(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
   let corner_radius = 20.0 * scaling_factor;
   let border_surround = (8.0 * scaling_factor) as u16;
   let border_large = (10.0 * scaling_factor) as u16;
   let border_small = (5.0 * scaling_factor) as u16;
 
-  ui.element().width(grow!()).height(grow!()).contain(1.0)
+  ui.element().width(grow!()).height(grow!()).contain(1.0).id("grid_container")
     .layout(|l| l.padding(20))
     .children(|ui| {
       ui.element().width(grow!()).height(grow!())
@@ -475,12 +529,18 @@ fn draw_screen(ui: &mut Ui, screen: Screen) {
         .children(|ui| {
           if let Some(level) = get_level(&difficulty) {
             // ui.text(&fmt_board(&level.level), |t| t.font_size(30).color(GREEN).font(&MONO_FONT));
+            draw_top_bar(ui, &level, scaling_factor);
             draw_grid(ui, &level, scaling_factor);
+            draw_bottom_bar(ui, &level, scaling_factor);
             if level.is_solved() {
-              ui.text("Congratulations! You solved the puzzle!", |t| t.font_size(30).color(GREEN));
+              ui.element().width(grow!()).height(grow!())
+                .floating(|f| f.attach_root())
+                .background_color((0, 0, 0, 200))
+                .layout(|l| l.align(CenterX, CenterY))
+                .children(|ui| {
+                  ui.text("Solved!", |t| t.font_size(50).color(GREEN));
+                });
             }
-            button(ui, "Undo", 100.0, move |_| undo(&difficulty));
-            button(ui, "Redo", 100.0, move |_| redo(&difficulty));
           } else {
             ui.text(&format!("Generating level for {:?}...", difficulty), |t| t.font_size(30).color(YELLOW));
           }
@@ -541,7 +601,7 @@ async fn main() {
     draw_screen(&mut ui, get_current_screen());
 
     ui.show().await;
-
+    
     next_frame().await;
   }
 }
