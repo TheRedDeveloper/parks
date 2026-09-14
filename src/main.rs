@@ -430,12 +430,15 @@ fn redo(difficulty: &Difficulty) {
   }
 }
 
+const BAR_HEIGHT: f32 = 200.0;
+const BAR_PADDING: f32 = 20.0;
+
 fn draw_top_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
   ui.element()
-    .width(grow!(max: screen_height()-280.0*scaling_factor))
-    .layout(|l| l.padding((20.0 * scaling_factor) as u16))
+    .width(grow!(max: screen_height()-(BAR_HEIGHT + 2.0 * BAR_PADDING)*2.0*scaling_factor))
+    .layout(|l| l.padding((BAR_PADDING * scaling_factor) as u16))
     .children(|ui| {
-      ui.element().height(grow!()).width(fixed!(100.0 * scaling_factor))
+      ui.element().height(grow!()).width(fixed!(BAR_HEIGHT * scaling_factor))
         .image(&graphic!("assets/images/back_placeholder.png"))
         .on_press(move |_, _| {
           if get_eye_holding() {
@@ -448,14 +451,14 @@ fn draw_top_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
       ui.element().width(grow!())
         .layout(|l| l.align(CenterX, CenterY))
         .children(|ui| {
-          ui.text(&format!("{:?}", level.level.difficulty), |t| t.font_size((100.0 * scaling_factor) as u16).color(WHITE));
+          ui.text(&format!("{:?}", level.level.difficulty), |t| t.font_size((BAR_HEIGHT * scaling_factor) as u16).color(WHITE));
         });
-      ui.element().height(grow!()).width(fixed!(100.0 * scaling_factor)).empty();
+      ui.element().height(grow!()).width(fixed!(BAR_HEIGHT * scaling_factor)).empty();
     });
 }
 
-fn bottom_bar_button<'ui, 'ply>(ui: &'ui mut Ui<'_, 'ply>, image: &'static GraphicAsset, height: f32, action: impl Fn() + 'static) -> ElementBuilder<'ply, NoId<'ui>> {
-  ui.element().height(fixed!(height)).width(grow!()).contain(1.0)
+fn bottom_bar_button<'ui, 'ply>(ui: &'ui mut Ui<'_, 'ply>, image: &'static GraphicAsset, scaling_factor: f32, action: impl Fn() + 'static) -> ElementBuilder<'ply, NoId<'ui>> {
+  ui.element().height(fixed!(BAR_HEIGHT * scaling_factor)).width(grow!()).contain(1.0)
     .image(image)
     .on_release(move |_, _, hovered| {
       if hovered {
@@ -467,102 +470,93 @@ fn bottom_bar_button<'ui, 'ply>(ui: &'ui mut Ui<'_, 'ply>, image: &'static Graph
 fn draw_bottom_bar(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
   let difficulty = level.level.difficulty;
   ui.element()
-    .width(grow!(max: screen_height()-280.0*scaling_factor))
-    .height(fixed!(140.0 * scaling_factor))
-    .layout(|l| l.padding((20.0 * scaling_factor) as u16))
+    .width(grow!(max: screen_height()-(BAR_HEIGHT + 2.0 * BAR_PADDING)*2.0*scaling_factor))
+    .height(fixed!((BAR_HEIGHT + 2.0 * BAR_PADDING) * scaling_factor))
+    .layout(|l| l.padding((BAR_PADDING * scaling_factor) as u16))
     .children(|ui| {
-      bottom_bar_button(ui, &UNDO_PLACEHOLDER, 100.0 * scaling_factor, move || {
+      bottom_bar_button(ui, &UNDO_PLACEHOLDER, scaling_factor, move || {
         undo(&difficulty);
       }).empty();
-      bottom_bar_button(ui, &UNDO_PLACEHOLDER, 100.0 * scaling_factor, move || {
+      bottom_bar_button(ui, &UNDO_PLACEHOLDER, scaling_factor, move || {
         redo(&difficulty);
       }).rotate_visual(|r| r.flip_x()).empty();
-      bottom_bar_button(ui, &QUESTION_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
-      bottom_bar_button(ui, &PENCIL_PLACEHOLDER, 100.0 * scaling_factor, move || { todo!() }).empty();
-
-      let is_holding = get_eye_holding();
-      let eye_el = ui.element().id("eye_button")
-        .height(fixed!(100.0 * scaling_factor))
-        .width(grow!())
-        .contain(1.0)
-        .image(&EYE_PLACEHOLDER)
+      bottom_bar_button(ui, &QUESTION_PLACEHOLDER, scaling_factor, move || { todo!() }).empty();
+      bottom_bar_button(ui, &PENCIL_PLACEHOLDER, scaling_factor, move || { todo!() }).empty();
+      bottom_bar_button(ui, &EYE_PLACEHOLDER, scaling_factor, move || {})
+        .id("eye_button")
         .on_press(move |_, _| {
           end_interaction();
           set_eye_holding(true);
           set_eye_initial_mode(get_highlight_mode());
           set_eye_hovered_option(None);
-        });
-
-      if is_holding {
-        eye_el.children(|ui| {
-          ui.element().id("eye_popup_menu")
-            .width(fit!())
-            .height(fit!())
-            .floating(|f| f
-              .attach_parent()
-              .anchor((Right, Bottom), (Right, Top))
-              .z_index(100)
-            )
-            .capture()
-            .background_color(0x1C1C24)
-            .border(|b| b.all((2.0 * scaling_factor).max(1.0) as u16).color(0x3A3A4A).position(Outside))
-            .corner_radius(8.0 * scaling_factor)
-            .layout(|l| l
-              .direction(TopToBottom)
-              .gap((4.0 * scaling_factor) as u16)
-              .padding((6.0 * scaling_factor) as u16)
-            )
-            .children(|ui| {
-              let options = [
-                ("None", HighlightMode::None, "eye_opt_none"),
-                ("Section", HighlightMode::Section, "eye_opt_section"),
-                ("Row", HighlightMode::Row, "eye_opt_row"),
-                ("Column", HighlightMode::Column, "eye_opt_column"),
-              ];
-              let active_mode = get_active_highlight_mode();
-              for (label, mode, id_str) in options {
-                let is_hovered = get_eye_hovered_option() == Some(mode);
-                let is_active = active_mode == mode;
-                let bg_color = if is_hovered {
-                  0x2A62E8
-                } else if is_active {
-                  0x303042
-                } else {
-                  0x1C1C24
-                };
-                let text_color = if is_hovered || is_active {
-                  WHITE
-                } else {
-                  LIGHTGRAY
-                };
-                ui.element().id(id_str)
-                  .width(grow!())
-                  .capture()
-                  .corner_radius(6.0 * scaling_factor)
-                  .background_color(bg_color)
-                  .layout(|l| l
-                    .align(CenterX, CenterY)
-                    .padding((
-                      (8.0 * scaling_factor) as u16,
-                      (14.0 * scaling_factor) as u16,
-                      (8.0 * scaling_factor) as u16,
-                      (14.0 * scaling_factor) as u16,
-                    ))
-                  )
-                  .on_hover(move |_, _| {
-                    set_eye_hovered_option(Some(mode));
-                  })
-                  .children(|ui| {
-                    ui.text(label, |t| t
-                      .font_size((70.0 * scaling_factor) as u16)
-                      .color(text_color)
-                    );
-                  });
-              }
-            });
-        });
-      } else {
-        eye_el.empty();
+        }).empty();
+      
+      if get_eye_holding() {
+        ui.element().id("eye_popup_menu")
+          .width(fit!())
+          .height(fit!())
+          .floating(|f| f
+            .attach_id("eye_button")
+            .anchor((Right, Bottom), (Right, Top))
+            .z_index(100)
+          )
+          .capture()
+          .background_color(0x1C1C24)
+          .border(|b| b.all((2.0 * scaling_factor).max(1.0) as u16).color(0x3A3A4A).position(Outside))
+          .corner_radius(8.0 * scaling_factor)
+          .layout(|l| l
+            .direction(TopToBottom)
+            .gap((4.0 * scaling_factor) as u16)
+            .padding((6.0 * scaling_factor) as u16)
+          )
+          .children(|ui| {
+            let options = [
+              ("None", HighlightMode::None, "eye_opt_none"),
+              ("Section", HighlightMode::Section, "eye_opt_section"),
+              ("Row", HighlightMode::Row, "eye_opt_row"),
+              ("Column", HighlightMode::Column, "eye_opt_column"),
+            ];
+            let active_mode = get_active_highlight_mode();
+            for (label, mode, id_str) in options {
+              let is_hovered = get_eye_hovered_option() == Some(mode);
+              let is_active = active_mode == mode;
+              let bg_color = if is_hovered {
+                0x2A62E8
+              } else if is_active {
+                0x303042
+              } else {
+                0x1C1C24
+              };
+              let text_color = if is_hovered || is_active {
+                WHITE
+              } else {
+                LIGHTGRAY
+              };
+              ui.element().id(id_str)
+                .width(grow!())
+                .capture()
+                .corner_radius(6.0 * scaling_factor)
+                .background_color(bg_color)
+                .layout(|l| l
+                  .align(CenterX, CenterY)
+                  .padding((
+                    (8.0 * scaling_factor) as u16,
+                    (14.0 * scaling_factor) as u16,
+                    (8.0 * scaling_factor) as u16,
+                    (14.0 * scaling_factor) as u16,
+                  ))
+                )
+                .on_hover(move |_, _| {
+                  set_eye_hovered_option(Some(mode));
+                })
+                .children(|ui| {
+                  ui.text(label, |t| t
+                    .font_size((70.0 * scaling_factor) as u16)
+                    .color(text_color)
+                  );
+                });
+            }
+          });
       }
     });
 }
@@ -657,7 +651,7 @@ fn draw_grid(ui: &mut Ui, level: &UserLevel, scaling_factor: f32) {
 }
 
 fn draw_screen(ui: &mut Ui, screen: Screen) {
-  let scaling_factor = ((screen_width() / 1080.0).min(screen_height() / 1920.0) * 0.7).max(0.5);
+  let scaling_factor = ((screen_width() / 1080.0).min(screen_height() / 1920.0) * 0.7).max(0.2);
   match screen {
     Screen::MainMenu => {
       ui.element().width(grow!()).height(grow!())
